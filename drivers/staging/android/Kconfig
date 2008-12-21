@@ -7,6 +7,9 @@ config ANDROID
 	  Enable support for various drivers needed on the Android platform
 
 if ANDROID
+config ANDROID_BINDER_IPC
+	bool "Android Binder IPC Driver"
+	default n
 
 config ASHMEM
 	bool "Enable the Anonymous Shared Memory Subsystem"
@@ -89,10 +92,6 @@ config ONESHOT_SYNC_USER
 source "drivers/staging/android/ion/Kconfig"
 
 source "drivers/staging/android/fiq_debugger/Kconfig"
-
-config ANDROID_BINDER_IPC
-	tristate "Android Binder IPC Driver"
-	default y
 
 endif # if ANDROID
 
