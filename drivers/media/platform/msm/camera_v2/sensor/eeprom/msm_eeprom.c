@@ -1185,7 +1185,6 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 #endif
 //Add by likelong@camera 2015.5.19 to reduce the device bring up time end
 
->>>>>>> theirs
 	v4l2_subdev_init(&e_ctrl->msm_sd.sd,
 		e_ctrl->eeprom_v4l2_subdev_ops);
 	v4l2_set_subdevdata(&e_ctrl->msm_sd.sd, e_ctrl);
