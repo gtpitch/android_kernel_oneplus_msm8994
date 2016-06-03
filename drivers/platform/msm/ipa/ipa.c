@@ -1715,6 +1715,8 @@ int ipa_q6_pipe_reset(void)
 
 	if (!atomic_read(&ipa_ctx->uc_ctx.uc_loaded)) {
 		IPAERR("uC is not loaded, won't reset Q6 pipes\n");
+		ipa_dec_client_disable_clks();
+		return 0;
 	} else {
 		for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++)
 			if (IPA_CLIENT_IS_Q6_CONS(client_idx) ||
