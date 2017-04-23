@@ -9207,8 +9207,14 @@ VOS_STATUS wma_get_buf_start_scan_cmd(tp_wma_handle wma_handle,
 		    }
 		    if (wma_is_STA_active(wma_handle) ||
 			wma_is_P2P_CLI_active(wma_handle)) {
-			/* Typical background scan. Disable burst scan for now. */
-			cmd->burst_duration = 0;
+			if (scan_req->burst_scan_duration)
+				cmd->burst_duration =
+						scan_req->burst_scan_duration;
+			else
+				/* Typical background scan.
+				 * Disable burst scan for now.
+				 */
+				cmd->burst_duration = 0;
 			break;
 		    }
 		} while (0);
@@ -12790,8 +12796,6 @@ void wma_vdev_resp_timer(void *data)
 		}
 		WMA_LOGI("%s: bssid %pM vdev_id %d", __func__, params->bssId,
 						tgt_req->vdev_id);
-		wma_send_msg(wma, WDA_ADD_BSS_RSP, (void *)params, 0);
-		goto free_tgt_req;
 error0:
 		if (peer)
 			wma_remove_peer(wma, params->bssId,
@@ -13597,8 +13601,7 @@ static int32_t wmi_unified_send_peer_assoc(tp_wma_handle wma,
 	 * Limit nss to max number of rf chain supported by target
 	 * Otherwise Fw will crash
 	 */
-	if (!wma->per_band_chainmask_supp)
-		wma_update_txrx_chainmask(wma->num_rf_chains, &cmd->peer_nss);
+	wma_update_txrx_chainmask(wma->num_rf_chains, &cmd->peer_nss);
 
 	intr->nss = cmd->peer_nss;
 	cmd->peer_phymode = phymode;
@@ -14504,10 +14507,13 @@ static void wma_process_cli_set_cmd(tp_wma_handle wma,
 		WMA_LOGD("pdev pid %d pval %d", privcmd->param_id,
 				privcmd->param_value);
 		if ((privcmd->param_id == WMI_PDEV_PARAM_RX_CHAIN_MASK) ||
-			(privcmd->param_id == WMI_PDEV_PARAM_TX_CHAIN_MASK)) {
+		   (privcmd->param_id == WMI_PDEV_PARAM_TX_CHAIN_MASK) ||
+		   (privcmd->param_id == WMI_PDEV_PARAM_RX_CHAIN_MASK_2G) ||
+		   (privcmd->param_id == WMI_PDEV_PARAM_TX_CHAIN_MASK_2G) ||
+		   (privcmd->param_id == WMI_PDEV_PARAM_RX_CHAIN_MASK_5G) ||
+		   (privcmd->param_id == WMI_PDEV_PARAM_TX_CHAIN_MASK_5G))
 			wma_update_txrx_chainmask(wma->num_rf_chains,
 						&privcmd->param_value);
-		}
 
 		ret = wmi_unified_pdev_set_param(wma->wmi_handle,
 						privcmd->param_id,
@@ -25008,7 +25014,7 @@ static VOS_STATUS wma_enable_arp_ns_offload(tp_wma_handle wma,
 	WMI_SET_ARP_NS_OFFLOAD_CMD_fixed_param *cmd;
 	A_UINT8* buf_ptr;
 	wmi_buf_t buf;
-	int32_t len;
+	uint32_t len;
 	VOS_STATUS status = VOS_STATUS_SUCCESS;
 	u_int8_t vdev_id;
 	tpSirHostOffloadReq ns_offload_req;
@@ -25040,6 +25046,11 @@ static VOS_STATUS wma_enable_arp_ns_offload(tp_wma_handle wma,
 		ns_offload_req = hostoffloadreq;
 		arp_offload_req = &wma->interfaces[vdev_id].arp_offload_req;
 		count = hostoffloadreq->num_ns_offload_count;
+	}
+
+	if (count >= SIR_MAC_NUM_TARGET_IPV6_NS_OFFLOAD_NA) {
+		status = VOS_STATUS_E_INVAL;
+		goto err_vdev;
 	}
 
 	len = sizeof(WMI_SET_ARP_NS_OFFLOAD_CMD_fixed_param) +
@@ -27422,8 +27433,8 @@ VOS_STATUS wma_get_buf_extscan_hotlist_cmd(tp_wma_handle wma_handle,
 	/* setbssid hotlist expects the bssid list
 	 * to be non zero value
 	 */
-	if (!numap) {
-		WMA_LOGE("%s: Invalid number of bssid's", __func__);
+	if ((numap <= 0) || (numap > WLAN_EXTSCAN_MAX_HOTLIST_APS)) {
+		WMA_LOGE("%s: Invalid number of APs: %d", __func__, numap);
 		return VOS_STATUS_E_INVAL;
 	}
 	num_entries = wma_get_hotlist_entries_per_page(wma_handle->wmi_handle,
@@ -27715,9 +27726,9 @@ VOS_STATUS wma_get_buf_extscan_change_monitor_cmd(tp_wma_handle wma_handle,
 	int numap = psigchange->numAp;
 	tSirAPThresholdParam  *src_ap = psigchange->ap;
 
-	if (!numap) {
-		WMA_LOGE("%s: Invalid number of bssid's",
-			__func__);
+	if ((numap <= 0) || (numap > WLAN_EXTSCAN_MAX_SIGNIFICANT_CHANGE_APS)) {
+		WMA_LOGE("%s: Invalid number of APs: %d",
+			__func__, numap);
 		return VOS_STATUS_E_INVAL;
 	}
 	len += WMI_TLV_HDR_SIZE;
@@ -36459,20 +36470,12 @@ int wma_dfs_indicate_radar(struct ieee80211com *ic,
 		WMA_LOGE("%s:DFS- Invalid WMA handle", __func__);
 		return -ENOENT;
 	}
-	radar_event = (struct wma_dfs_radar_indication *)
-		vos_mem_malloc(sizeof(struct wma_dfs_radar_indication));
-	if (radar_event == NULL)
-	{
-		WMA_LOGE("%s:DFS- Invalid radar_event", __func__);
-		return -ENOENT;
-	}
 
 	/*
 	 * Do not post multiple Radar events on the same channel.
 	 * But, when DFS test mode is enabled, allow multiple dfs
 	 * radar events to be posted on the same channel.
 	 */
-
 	adf_os_spin_lock_bh(&ic->chan_lock);
 	if (!pmac->sap.SapDfsInfo.disable_dfs_ch_switch)
 		wma->dfs_ic->disable_phy_err_processing = true;
@@ -36480,6 +36483,14 @@ int wma_dfs_indicate_radar(struct ieee80211com *ic,
 	if ((ichan->ic_ieee  != (wma->dfs_ic->last_radar_found_chan)) ||
 	    ( pmac->sap.SapDfsInfo.disable_dfs_ch_switch == VOS_TRUE) )
 	{
+		radar_event = (struct wma_dfs_radar_indication *)
+			vos_mem_malloc(sizeof(*radar_event));
+		if (radar_event == NULL) {
+			WMA_LOGE(FL("Failed to allocate memory for radar_event"));
+			adf_os_spin_unlock_bh(&ic->chan_lock);
+			return -ENOMEM;
+		}
+
 		/* Indicate the radar event to HDD to stop the netif Tx queues*/
 		hdd_radar_event.ieee_chan_number = ichan->ic_ieee;
 		hdd_radar_event.chan_freq = ichan->ic_freq;
