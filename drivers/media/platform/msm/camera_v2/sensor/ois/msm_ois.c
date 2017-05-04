@@ -327,9 +327,17 @@ static int32_t msm_ois_config(struct msm_ois_ctrl_t *o_ctrl,
 			rc = -EFAULT;
 			break;
 		}
-
-		if (!conf_array.size ||
-			conf_array.size > I2C_SEQ_REG_DATA_MAX) {
+#else
+		rc =copy_from_user(&conf_array,
+			(void *)cdata->cfg.settings,
+			sizeof(struct msm_camera_i2c_seq_reg_setting));
+		if (rc) {
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			rc = -EFAULT;
+			break;
+		}
+ #endif /*VENDOR_EDIT*/
+		if (!conf_array.size) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
